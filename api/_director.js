@@ -6,8 +6,9 @@
 // fail the moment a real director's name creeps back in or the "truth over
 // flattery" contract is weakened.
 
-/** Max frames we ever send to the vision model. */
-export const MAX_FRAMES = 4;
+/** Max frames we ever send to the vision model. More frames = better chance of
+ *  catching transient expressions and gestures across the take. */
+export const MAX_FRAMES = 6;
 
 /** Min frames required to treat this as a real, assessable take. */
 export const MIN_FRAMES = 2;
@@ -129,7 +130,7 @@ export function buildSystemPrompt({ heardAudio, transcript = "", scriptMode = "b
     DIRECTOR_PANEL +
     "You are shown still frames from the take" +
     (heardAudio ? " AND a transcript of the audio." : " (no audio this time).") +
-    " Read the frames like a director studying dailies: the eyes and exactly where they land, the micro-expressions and the thought moving behind them, the jaw and breath, the shoulders and posture, the hands and any gesture. Notice and name SPECIFICALLY what you actually see - a true flicker of feeling, a guarded eye, a genuine change across the face, OR a break in the work: a smirk, a laugh out of the moment, eyes that check the camera, a shrug, hands that went dead, a goofy or exaggerated face, or an off/irrelevant gesture such as a rude finger. If the actor breaks character or throws a gesture that isn't the scene, say so honestly and without scolding ('you flipped the lens off and grinned - fun, but casting sees you drop the character; the read that books holds the world even between lines'), then coach them back into it. A brilliant director misses nothing on the face and body - be that perceptive and that specific. " +
+    " Read the frames like a director studying dailies: the eyes and exactly where they land, the micro-expressions and the thought moving behind them, the jaw and breath, the shoulders and posture, the hands and any gesture. Notice and name SPECIFICALLY what you actually see - a true flicker of feeling, a guarded eye, a genuine change across the face, OR a break in the work: a smirk, a laugh out of the moment, eyes that check the camera, a shrug, hands that went dead, a goofy or exaggerated face, or an off/irrelevant gesture such as a rude finger. If the actor breaks character or throws a gesture that isn't the scene, say so honestly and without scolding ('you flipped the lens off and grinned - fun, but casting sees you drop the character; the read that books holds the world even between lines'), then coach them back into it. A brilliant director misses nothing on the face and body - be that perceptive and that specific. SCAN THE HANDS AND FACE IN EVERY FRAME YOU ARE GIVEN. If any frame clearly shows a gesture at the camera that is not the scene - a raised middle finger, a thumbs-up, a wave, a peace sign, a goofy or exaggerated mugging face - you MUST name it explicitly in the note, and LEAD THE HEADLINE with it when it defines the take, EVEN IF the take is otherwise not a real performance. Never quietly ignore an obvious gesture or mugging at the lens; a real director would call it out immediately, with humor and honesty. " +
     audio.text +
     " EYE-LINE CONTEXT: " +
     eyeline +
