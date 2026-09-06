@@ -9,6 +9,13 @@
 const VOICES = { male: "onyx", female: "nova" };
 const MAX_CHARS = 3500; // OpenAI TTS input cap is ~4096; stay safely under.
 
+// The soul of the app: HOW the director's note is delivered. gpt-4o-mini-tts
+// takes tone instructions, so we steer it to a warm, intimate, believing
+// mentor — not an announcer. This is the single biggest lever on the "chills"
+// moment; tune it here.
+const DIRECTOR_TONE =
+  "Speak as a warm, seasoned film director leaning in to an actor between takes: intimate, unhurried, and quietly moved by their work. Believing and kind, a mentor who is on their side — never clinical, never an announcer. Let genuine praise land softly and warmly; before the honest note, take a small breath so it carries weight. Conversational and human, a touch of lived-in gravel, cinematic and close, at a calm and natural pace — the voice you would trust in the last moment before 'action.'";
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -30,9 +37,10 @@ export default async function handler(req, res) {
         Authorization: "Bearer " + process.env.OPENAI_API_KEY,
       },
       body: JSON.stringify({
-        model: "tts-1",
+        model: "gpt-4o-mini-tts",
         voice: openaiVoice,
         input: clean,
+        instructions: DIRECTOR_TONE,
         response_format: "mp3",
       }),
     });
