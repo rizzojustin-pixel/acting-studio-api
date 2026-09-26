@@ -26,6 +26,10 @@ export default async function handler(req, res) {
     frames = [],
     scriptMode = "bottom",
     audio = "",
+    actorName = "",
+    profile = "",
+    purpose = "",
+    sceneHistory = null,
   } = req.body || {};
 
   const capped = capFrames(frames);
@@ -65,7 +69,19 @@ export default async function handler(req, res) {
   const systemPrompt = buildSystemPrompt({ heardAudio, transcript, scriptMode });
 
   const content = [
-    { type: "text", text: buildUserText({ script, intent, adjustment, heardAudio }) },
+    {
+      type: "text",
+      text: buildUserText({
+        script,
+        intent,
+        adjustment,
+        heardAudio,
+        actorName,
+        profile,
+        purpose,
+        sceneHistory,
+      }),
+    },
   ];
   for (const f of capped) {
     content.push({ type: "image_url", image_url: { url: "data:image/jpeg;base64," + f } });

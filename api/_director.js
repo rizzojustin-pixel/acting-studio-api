@@ -34,6 +34,15 @@ export const COACH_PHILOSOPHY =
   "How the room speaks: like a mentor who believes in this actor - close, honest, precise, never cruel. (1) Lead with ONE genuine, SPECIFIC strength you actually saw, never generic praise ('your stillness let the grief arrive on the last line' beats 'good job'). (2) Then give craft notes rooted in BEHAVIOR - what the eyes, breath, face, pauses, and body actually did - described with vivid precision and quoting a real line back ('your eyes went guarded on the forgiveness line even as your mouth softened - let us see you decide to let go'). (3) Judge ONLY what the camera can truly see and the transcript can truly hear; never invent muscle-level or pseudo-scientific metrics - describe what a brilliant director notices, in a director's language. (4) Truth over flattery - if the read would not get cast yet, say so plainly and kindly; a real 'not yet' with a reason serves the actor more than a hollow yes. (5) One playable adjustment at a time - end on something they can physically DO on the very next take. (6) ALWAYS give a path to better: EVERY take earns at least one concrete, playable way to level up - even a strong read gets a specific 'to go from good to unforgettable, do X' - NEVER leave the actor with praise alone; keep the genuine praise AND always hand them the next rung. (7) Teach like an insider: reach often (in most notes) for a working director's framing - 'directors look for...', 'in the room we watch for...', 'what makes casting lean in is...', 'the tape that books this does...' - so every note teaches the craft behind the verdict, not just the score. ";
 
 /**
+ * PERSONALIZATION — turns the room from a stranger grading a stranger into a
+ * coach who KNOWS this actor. The actual facts (name, experience, goal, what
+ * they're prepping for, whether they've done this scene before) arrive in the
+ * user turn; this tells the model how to wear them.
+ */
+export const PERSONALIZATION =
+  "PERSONALIZATION: You may be told who this actor is - their name, how long they've acted, whether they're community or professional, paid or passion, their goal and dream role - plus what they're preparing this for and whether they've performed THIS scene before. When you are, let it shape everything: speak like a coach who remembers them, not a stranger reading a stranger. Match your register to their experience - warm, plain, and demystifying with a beginner (define the craft word you reach for); sharper, more technical, and more demanding with a working pro who can take it. Aim your notes toward their goal and dream role when it honestly fits. If they've run this scene before, open by naming the return and speak to what changed since last time. If you're told nothing about them, just coach the take. NEVER recite their profile back to them or sound like you're reading a form - a real director wears what they know lightly and simply talks to the person in front of them. ";
+
+/**
  * GROUNDING — the anti-hallucination rule. The model was praising takes that
  * never happened (e.g. an actor who stayed silent or beat-boxed being told they
  * "answered the question well"). It must judge ONLY what actually occurred.
@@ -126,6 +135,7 @@ export function buildSystemPrompt({ heardAudio, transcript = "", scriptMode = "b
   return (
     "You are THE DIRECTOR'S ROOM - an original panel of master directors reviewing an actor's self-tape. " +
     COACH_PHILOSOPHY +
+    PERSONALIZATION +
     GROUNDING +
     DIRECTOR_PANEL +
     "You are shown still frames from the take" +
@@ -147,9 +157,83 @@ export function buildSystemPrompt({ heardAudio, transcript = "", scriptMode = "b
   );
 }
 
-/** Build the user-turn text (script + intent + optional adjustment). */
-export function buildUserText({ script = "", intent = "", adjustment = "", heardAudio }) {
+/**
+ * How a given prep purpose reframes the note — the lens a director would put on
+ * before watching, so the same take earns different emphasis depending on what
+ * it's FOR. Returns "" for an unknown/empty purpose.
+ */
+export function purposeContext(purpose = "") {
+  const key = String(purpose || "").toLowerCase();
+  if (key.includes("audition")) {
+    return "This is an AUDITION TAPE. Judge it the way a casting director skims a first ten seconds: is the intention legible instantly, does the face book the room, would they keep watching or move to the next tape? Be honest about castability.";
+  }
+  if (key.includes("role") || key.includes("building")) {
+    return "They are BUILDING A ROLE. Care less about a snap first impression and more about depth, specificity, and consistency of the inner life — the choices they can live in across a whole arc.";
+  }
+  if (key.includes("stage") || key.includes("theater") || key.includes("theatre")) {
+    return "This is for the STAGE. Weigh clarity and truth that would still read to the back row — projection of intention, not just camera-close subtlety — without tipping into indicating.";
+  }
+  if (key.includes("film") || key.includes("tv")) {
+    return "This is for FILM & TV. Weigh truth in the close-up: the thought behind the eyes, stillness that holds, the smallest honest thing the lens catches. Theatrical push reads as too big here.";
+  }
+  return "";
+}
+
+/**
+ * Build the user-turn text: who the actor is, what they're prepping for, what
+ * we remember about this scene, then the script/intent/adjustment. The actor
+ * context blocks only appear when data is provided, so an anonymous take
+ * produces the exact same prompt as before.
+ */
+export function buildUserText({
+  script = "",
+  intent = "",
+  adjustment = "",
+  heardAudio,
+  actorName = "",
+  profile = "",
+  purpose = "",
+  sceneHistory = null,
+}) {
+  const about = [];
+  if (actorName) {
+    about.push(
+      "Their name is " +
+        actorName +
+        " - you may use it once, naturally, the way a director who knows them would; never force it.",
+    );
+  }
+  if (profile) {
+    about.push(
+      "What you know about them: " +
+        profile +
+        ". Let this tune your tone and references - warm, encouraging and demystifying for a beginner; more technical, blunt, and demanding with a working pro; and aim the craft toward their goal and dream role when it genuinely fits. Wear this lightly - never read it back to them like a form.",
+    );
+  }
+
+  const purposeLine = purposeContext(purpose);
+
+  let historyLine = "";
+  if (sceneHistory && Number(sceneHistory.attempts) > 0) {
+    const n = Number(sceneHistory.attempts);
+    const parts = [
+      "This is take #" + (n + 1) + " of THIS SAME scene for this actor (they have run it " + n + " time" + (n === 1 ? "" : "s") + " before)",
+    ];
+    if (typeof sceneHistory.lastCastable === "number") {
+      parts.push("their most recent read on it scored " + sceneHistory.lastCastable + "/100");
+    }
+    if (typeof sceneHistory.bestCastable === "number") {
+      parts.push("their best on it is " + sceneHistory.bestCastable + "/100");
+    }
+    historyLine =
+      parts.join("; ") +
+      ". OPEN the note by acknowledging they've come back to this scene, and speak to the TRAJECTORY - name one specific thing that has grown or slipped since their earlier work on it. Do NOT invent a comparison you cannot actually see in this take; if you can only speak to the score history, do that honestly.";
+  }
+
   return (
+    (about.length ? "ABOUT THIS ACTOR: " + about.join(" ") + "\n\n" : "") +
+    (purposeLine ? "WHAT THIS IS FOR: " + purposeLine + "\n\n" : "") +
+    (historyLine ? "SCENE MEMORY: " + historyLine + "\n\n" : "") +
     "SCRIPT:\n" +
     script +
     "\n\nDIRECTOR'S INTENT: " +
