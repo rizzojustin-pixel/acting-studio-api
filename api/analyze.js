@@ -11,6 +11,37 @@ import {
   buildUserText,
   parseModelJson,
 } from "./_director.js";
+// NOTE: ./_audio.js (ffmpeg + @vercel/blob) is imported DYNAMICALLY, only when a
+// take video was actually uploaded — so any issue there can never break the
+// frames-only analysis path that existing app versions rely on.
+
+// Fetching the take from Blob + ffmpeg + Whisper + the GPT-4o vision call can
+// take 20-40s; give the function room (Hobby allows up to 300s).
+export const config = { maxDuration: 60 };
+
+/**
+ * Transcribe an audio Buffer via Whisper. Returns the trimmed transcript, or ""
+ * when nothing usable was heard. Never throws — a failed transcription just
+ * means Pacing/Diction come back "not assessed".
+ */
+async function transcribe(buffer, filename, contentType) {
+  if (!buffer || buffer.length < 1000) return "";
+  try {
+    const form = new FormData();
+    form.append("file", new Blob([buffer], { type: contentType }), filename);
+    form.append("model", "whisper-1");
+    const wr = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + process.env.OPENAI_API_KEY },
+      body: form,
+    });
+    const wdata = await wr.json();
+    return wdata && wdata.text ? wdata.text.trim() : "";
+  } catch (e) {
+    console.warn("[analyze] transcription failed", e?.message || e);
+    return "";
+  }
+}
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -26,6 +57,7 @@ export default async function handler(req, res) {
     frames = [],
     scriptMode = "bottom",
     audio = "",
+    videoPath = "",
     actorName = "",
     profile = "",
     purpose = "",
@@ -35,32 +67,49 @@ export default async function handler(req, res) {
   const capped = capFrames(frames);
 
   if (!hasEnoughFrames(frames)) {
+    // No usable performance — but if a tape was uploaded, still delete it.
+    if (videoPath) {
+      try {
+        const { deleteBlob } = await import("./_audio.js");
+        await deleteBlob(videoPath);
+      } catch (e) {
+        console.warn("[analyze] blob cleanup skipped", e?.message || e);
+      }
+    }
     return res.status(200).json(insufficientFramesResponse());
   }
 
-  // ---- STEP 1: transcribe audio (if provided) ----
+  // ---- STEP 1: get the voice track and transcribe it ----
+  // Preferred path: the app uploaded the un-muted video to Blob and passed its
+  // path; we pull the audio out with ffmpeg. Legacy path: a base64 m4a in the
+  // request body. Either way, transcription failing is non-fatal (Pacing and
+  // Diction just come back "not assessed").
   let transcript = "";
   let heardAudio = false;
-  if (audio && audio.length > 100) {
+  if (videoPath) {
+    // Dynamic import isolates ffmpeg/@vercel/blob from the frames-only path.
+    let extractAudioFromBlob, deleteBlob;
     try {
-      const audioBuffer = Buffer.from(audio, "base64");
-      const form = new FormData();
-      const blob = new Blob([audioBuffer], { type: "audio/m4a" });
-      form.append("file", blob, "take.m4a");
-      form.append("model", "whisper-1");
-      const wr = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + process.env.OPENAI_API_KEY },
-        body: form,
-      });
-      const wdata = await wr.json();
-      if (wdata && wdata.text) {
-        transcript = wdata.text.trim();
-        heardAudio = transcript.length > 0;
-      }
+      ({ extractAudioFromBlob, deleteBlob } = await import("./_audio.js"));
     } catch (e) {
-      heardAudio = false;
+      console.warn("[analyze] audio module unavailable", e?.message || e);
     }
+    if (extractAudioFromBlob) {
+      try {
+        const mp3 = await extractAudioFromBlob(videoPath);
+        transcript = await transcribe(mp3, "audio.mp3", "audio/mpeg");
+        heardAudio = transcript.length > 0;
+      } catch (e) {
+        console.warn("[analyze] audio extraction failed", e?.message || e);
+      } finally {
+        // Never leave the tape sitting in storage.
+        await deleteBlob(videoPath);
+      }
+    }
+  } else if (audio && audio.length > 100) {
+    const buf = Buffer.from(audio, "base64");
+    transcript = await transcribe(buf, "take.m4a", "audio/m4a");
+    heardAudio = transcript.length > 0;
   }
 
   // Voice guidance signals whether pacing/diction may be scored (see director.js).
