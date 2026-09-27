@@ -14,7 +14,7 @@ function safe(fn) {
 
 export default async function handler(req, res) {
   const out = {
-    build: "v4-installonly",
+    build: "v5-includefiles",
     node: process.version,
     cwd: process.cwd(),
     hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
