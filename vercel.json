@@ -1,9 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install",
   "functions": {
     "api/analyze.js": {
       "maxDuration": 60,
-      "includeFiles": "node_modules/ffmpeg-static/**"
+      "includeFiles": "node_modules/**"
+    },
+    "api/get-upload-url.js": {
+      "maxDuration": 10,
+      "includeFiles": "node_modules/**"
+    },
+    "api/diag.js": {
+      "includeFiles": "node_modules/**"
     }
   }
 }
