@@ -11,11 +11,8 @@ import {
   buildUserText,
   parseModelJson,
 } from "./_director.js";
-// NOTE: ./_audio.js (ffmpeg + @vercel/blob) is imported DYNAMICALLY, only when a
-// take video was actually uploaded — so any issue there can never break the
-// frames-only analysis path that existing app versions rely on.
 
-// Fetching the take from Blob + ffmpeg + Whisper + the GPT-4o vision call can
+// Fetching Cloudinary's extracted audio + Whisper + the GPT-4o vision call can
 // take 20-40s; give the function room (Hobby allows up to 300s).
 export const config = { maxDuration: 60 };
 
@@ -43,6 +40,35 @@ async function transcribe(buffer, filename, contentType) {
   }
 }
 
+/**
+ * Pull the voice out of an uploaded take by fetching Cloudinary's on-the-fly
+ * audio extraction (video/upload/<id>.mp3 → Cloudinary transcodes to mp3). The
+ * first request may 423 while it processes, so retry briefly. Returns an mp3
+ * Buffer or null. Zero dependencies — plain fetch.
+ */
+async function fetchCloudinaryAudio(cloudId) {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  if (!cloudName || !cloudId) return null;
+  // Plain .mp3 on a video asset → Cloudinary extracts the audio as mp3. Keep it
+  // transform-free for reliability; Whisper downsamples internally anyway.
+  const url = `https://res.cloudinary.com/${cloudName}/video/upload/${cloudId}.mp3`;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return Buffer.from(await r.arrayBuffer());
+      // 423 = still processing; anything else transient → wait and retry.
+      if (r.status !== 423 && r.status !== 420 && r.status < 500) {
+        console.warn("[analyze] cloudinary audio fetch", r.status);
+        return null;
+      }
+    } catch (e) {
+      console.warn("[analyze] cloudinary fetch error", e?.message || e);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -57,7 +83,7 @@ export default async function handler(req, res) {
     frames = [],
     scriptMode = "bottom",
     audio = "",
-    videoPath = "",
+    cloudId = "",
     actorName = "",
     profile = "",
     purpose = "",
@@ -67,44 +93,21 @@ export default async function handler(req, res) {
   const capped = capFrames(frames);
 
   if (!hasEnoughFrames(frames)) {
-    // No usable performance — but if a tape was uploaded, still delete it.
-    if (videoPath) {
-      try {
-        const { deleteBlob } = await import("./_audio.js");
-        await deleteBlob(videoPath);
-      } catch (e) {
-        console.warn("[analyze] blob cleanup skipped", e?.message || e);
-      }
-    }
     return res.status(200).json(insufficientFramesResponse());
   }
 
   // ---- STEP 1: get the voice track and transcribe it ----
-  // Preferred path: the app uploaded the un-muted video to Blob and passed its
-  // path; we pull the audio out with ffmpeg. Legacy path: a base64 m4a in the
-  // request body. Either way, transcription failing is non-fatal (Pacing and
-  // Diction just come back "not assessed").
+  // Preferred path: the app uploaded the un-muted video to Cloudinary and passed
+  // its public id; we fetch Cloudinary's on-the-fly audio extraction. Legacy
+  // path: a base64 m4a in the request body. Transcription failing is non-fatal
+  // (Pacing and Diction just come back "not assessed").
   let transcript = "";
   let heardAudio = false;
-  if (videoPath) {
-    // Dynamic import isolates ffmpeg/@vercel/blob from the frames-only path.
-    let extractAudioFromBlob, deleteBlob;
-    try {
-      ({ extractAudioFromBlob, deleteBlob } = await import("./_audio.js"));
-    } catch (e) {
-      console.warn("[analyze] audio module unavailable", e?.message || e);
-    }
-    if (extractAudioFromBlob) {
-      try {
-        const mp3 = await extractAudioFromBlob(videoPath);
-        transcript = await transcribe(mp3, "audio.mp3", "audio/mpeg");
-        heardAudio = transcript.length > 0;
-      } catch (e) {
-        console.warn("[analyze] audio extraction failed", e?.message || e);
-      } finally {
-        // Never leave the tape sitting in storage.
-        await deleteBlob(videoPath);
-      }
+  if (cloudId) {
+    const mp3 = await fetchCloudinaryAudio(cloudId);
+    if (mp3) {
+      transcript = await transcribe(mp3, "audio.mp3", "audio/mpeg");
+      heardAudio = transcript.length > 0;
     }
   } else if (audio && audio.length > 100) {
     const buf = Buffer.from(audio, "base64");
