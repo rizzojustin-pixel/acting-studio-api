@@ -4,9 +4,10 @@
 // audio out of the video for transcription and deletes the blob afterward.
 //
 // Requires BLOB_READ_WRITE_TOKEN in the environment (auto-added when a Vercel
-// Blob store is connected to the project).
+// Blob store is connected to the project). @vercel/blob is imported dynamically
+// inside the handler so any load/runtime error is reported as JSON rather than
+// a generic function crash.
 import { randomUUID } from "node:crypto";
-import { issueSignedToken, presignUrl } from "@vercel/blob";
 
 export const config = { maxDuration: 10 };
 
@@ -27,6 +28,8 @@ export default async function handler(req, res) {
   }
 
   try {
+    const { issueSignedToken, presignUrl } = await import("@vercel/blob");
+
     const ext = req.body && req.body.ext === "mp4" ? "mp4" : "mov";
     const pathname = `tapes/${randomUUID()}.${ext}`;
 
@@ -49,6 +52,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ uploadUrl: presignedUrl, pathname });
   } catch (e) {
     console.error("[upload-url] failed", e);
-    return res.status(500).json({ error: "Could not prepare upload." });
+    return res.status(500).json({
+      error: "Could not prepare upload.",
+      detail: String((e && e.message) || e),
+    });
   }
 }
