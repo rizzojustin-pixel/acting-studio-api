@@ -47,7 +47,7 @@ async function transcribe(buffer, filename, contentType) {
  * Buffer or null. Zero dependencies — plain fetch.
  */
 async function fetchCloudinaryAudio(cloudId) {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || "di4i9twd9";
   if (!cloudName || !cloudId) return null;
   // Plain .mp3 on a video asset → Cloudinary extracts the audio as mp3. Keep it
   // transform-free for reliability; Whisper downsamples internally anyway.

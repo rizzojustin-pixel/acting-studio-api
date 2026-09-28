@@ -7,9 +7,10 @@
 // Zero npm dependencies on purpose — this backend's build does not install
 // packages, so everything here is built-in fetch/JSON only.
 //
-// Env vars (set in Vercel → project → Settings → Environment Variables):
-//   CLOUDINARY_CLOUD_NAME      e.g. "dxxxxxx"
-//   CLOUDINARY_UPLOAD_PRESET   name of an UNSIGNED upload preset
+// The cloud name and UNSIGNED preset are NOT secrets — they're designed to live
+// in client apps — so they're hardcoded as defaults here (env vars override).
+const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "di4i9twd9";
+const UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || "acting_tapes";
 
 export default function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -17,8 +18,8 @@ export default function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
+  const cloudName = CLOUD_NAME;
+  const uploadPreset = UPLOAD_PRESET;
 
   if (!cloudName || !uploadPreset) {
     // Not configured yet — the app falls back to analyzing frames only.
